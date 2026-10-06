@@ -1,0 +1,113 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solar Risk Predictor</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,-apple-system,Roboto,Arial,sans-serif;background:#16181a;color:#e8e8e8}
+#v{padding:30px 14px 24px;text-align:center;color:#fff;background:#555}
+#ic{font-size:56px;line-height:1}#w{font-size:42px;font-weight:800}#u{font-size:21px;margin:6px 0}#r{font-size:15px}#a{font-size:13px;margin-top:8px;opacity:.85}
+.row{display:flex;padding:0 6px}h3{margin:14px 12px 4px;font-size:14px;color:#9aa}
+button{font:inherit;flex:1;min-height:54px;border:0;border-radius:8px;background:#2a2e31;color:#eee;margin:3px;padding:6px}
+button.on{background:#f1f1f1;color:#111;font-weight:700}
+details{margin:10px 8px;background:#1f2326;border-radius:8px;padding:2px 12px 10px}summary{padding:12px 0;font-weight:600;min-height:44px}
+label{display:block;margin:10px 0 2px;font-size:13px;color:#9aa}
+input,select{font:inherit;width:100%;min-height:44px;padding:6px 8px;border-radius:6px;border:1px solid #444;background:#15181a;color:#eee}
+table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px solid #2c3135}td+td{text-align:right}
+svg{width:100%;height:120px;background:#15181a;border-radius:6px;margin-top:8px}small,a{color:#8a9}p{margin:10px 12px;font-size:12px;color:#789}
+input[type=range]{padding:0;border:0;background:none}.ro{float:right;color:#fff;font-weight:700}</style></head><body>
+<div id="v"><div id="ic"></div><div id="w"></div><div id="u"></div><div id="r"></div><div id="a"></div></div>
+<h3>Battery level now</h3><div class="row" id="bt"><button data-s="90">Full</button><button data-s="55">Half</button><button data-s="25">Low</button></div><p id="bs"></p>
+<h3>Sky right now</h3><div class="row" id="sk"><button data-k="0">Clear</button><button data-k="1">Cloudy</button><button data-k="2">Dark clouds coming</button></div>
+<details><summary>Details</summary><table id="tb"></table><svg id="ch" viewBox="0 0 300 120" preserveAspectRatio="none"></svg><small>Green: expected power, next 14 h. Grey: clear-sky power.</small></details>
+<details id="stg"><summary>Settings</summary><div id="fm"></div>
+<label>Paste a Google Maps link or "lat, lon"</label><input id="gl" placeholder="https://www.google.com/maps/@24.94,67.37,15z">
+<div class="row"><button id="gps">Use GPS</button><button id="shr">Copy share link</button><button id="rst">Reset</button></div>
+<p id="m"></p><p><a id="mp">Open in maps app</a> &middot; <a id="mo" target="_blank">OpenStreetMap</a></p></details>
+<p>Guidance only. Based on forecasts and your taps, not on meters. Weather data: Open-Meteo.</p>
+<script>
+(function(){
+var D={lat:24.9429,lon:67.3728,kwp:4.4,tilt:25,az:180,inv:5000,v:48,ah:200,chem:'li',res:30,hv:1500,nl:400,sv:150,ef:80};
+var FD=[['sv','Bare minimum you use (lights, fans, fridge)',0,[0,1000,10]],['nl','Moderate use (a normal evening)',0,[100,3000,50]],['hv','Heaviest use (AC, pump, iron together)',0,[500,10000,100]],['inv','Inverter capacity (W)'],['v','Battery voltage',[['12 V',12],['24 V',24],['48 V',48]]],['ah','Battery capacity (Ah)'],['chem','Battery type',[['Lithium','li'],['Lead-acid','pb']]],['res','Keep in reserve (%)'],['kwp','Solar panels installed (kWp)'],['tilt','Panel tilt (degrees)'],['az','Panels face',[['North',0],['North-east',45],['East',90],['South-east',135],['South',180],['South-west',225],['West',270],['North-west',315]]],['ef','System efficiency (%)'],['lat','Latitude'],['lon','Longitude']];
+var C,S,K,W;
+function $(i){return document.getElementById(i)}
+function cp(o){var r={},k;for(k in o)r[k]=o[k];return r}
+function get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}}
+function put(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function msg(t){$('m').textContent=t}
+function pt(s,o){var a=s.match(/\d+/g);return Date.UTC(+a[0],a[1]-1,+a[2],+a[3],+a[4])-o*1000}
+function f(w){return w>=1000?(w/1000).toFixed(1)+' kW':Math.round(w)+' W'}
+function hm(t){var d=new Date(t),m=d.getMinutes();return d.getHours()+':'+(m<10?'0':'')+m}
+function key(){return [C.lat,C.lon,C.tilt,C.az].join()}
+function xg(u,ok,no){var x=new XMLHttpRequest();x.open('GET',u,true);x.timeout=15000;x.onload=function(){if(x.status==200){try{ok(JSON.parse(x.responseText))}catch(e){no()}}else no()};x.onerror=x.ontimeout=no;x.send()}
+function ip(a,t){var ts=W.ts,n=ts.length,i,fr,x,y;if(t<=ts[0])return a[0];if(t>=ts[n-1])return a[n-1];i=Math.floor((t-ts[0])/36e5);fr=(t-ts[i])/36e5;x=a[i];y=a[i+1];if(x==null||y==null)return x==null?y:x;return x+(y-x)*fr}
+function pw(g,Ta){if(g==null||g<=0)return 0;var tc=Ta+0.03*g;return Math.max(0,Math.min(C.kwp*g*(1-0.004*(tc-25))*(C.ef/100),C.inv))}
+function cs(t){var d=new Date(t),n=Math.floor((t-Date.UTC(d.getUTCFullYear(),0,0))/864e5),B=2*Math.PI/365*(n-81),R=Math.PI/180,
+dec=23.45*R*Math.sin(2*Math.PI*(284+n)/365),eq=9.87*Math.sin(2*B)-7.53*Math.cos(B)-1.5*Math.sin(B),
+m=d.getUTCHours()*60+d.getUTCMinutes()+4*C.lon+eq,H=(m/4-180)*R,p=C.lat*R,b=C.tilt*R,g=(C.az-180)*R,
+cz=Math.sin(p)*Math.sin(dec)+Math.cos(p)*Math.cos(dec)*Math.cos(H),ci,gh;if(cz<=0.02)return 0;
+ci=Math.sin(dec)*Math.sin(p)*Math.cos(b)-Math.sin(dec)*Math.cos(p)*Math.sin(b)*Math.cos(g)+Math.cos(dec)*Math.cos(p)*Math.cos(b)*Math.cos(H)+Math.cos(dec)*Math.sin(p)*Math.sin(b)*Math.cos(g)*Math.cos(H)+Math.cos(dec)*Math.sin(b)*Math.sin(g)*Math.sin(H);
+gh=1098*cz*Math.exp(-0.059/cz);return gh*Math.max(0.15,Math.min(1.5,ci/Math.max(cz,0.15)))}
+var X=[['SAVE POWER','#b3261e','\u25BC'],['NORMAL ONLY','#5b3fa0','\u25CF'],['HEAVY OK','#1b7f3a','\u25B2']];
+function show(lv,u,r,a){var v=$('v');v.style.background=X[lv][1];$('ic').textContent=X[lv][2];$('w').textContent=X[lv][0];$('u').textContent=u;$('r').textContent=r;$('a').textContent=a}
+function calc(){
+var now=Date.now(),usable=C.v*C.ah*(C.chem=='li'?0.9:0.5),rWh=C.res/100*usable,soc=S.soc,ab=S.t?(now-S.t)/36e5:99,sky=now-K.t<27e5?K.k:0,
+age,vh,spd,conf,mg,lv,L,un,sc,i,j,gv,mx,mn,p0,p30,p60,av=0,hrs,kw=0,dk,rows,a,b,ymax,bl=['Low','Half','Full'];
+setOn('bt','data-s',S.t&&ab<8?String(S.soc):'');setOn('sk','data-k',sky?String(sky):(now-K.t<27e5?'0':''));
+$('bs').textContent=!S.t?'Tap your battery level to start.':ab>8?'Battery level is '+Math.round(ab)+' h old. Tap to update.':'Set '+Math.round(ab*60)+' min ago.';
+if(!W||W.k!==key()){show(0,'No forecast yet','Connect to the internet once to load it.',navigator.onLine===false?'Offline':'Loading...');return}
+age=(now-W.t)/6e4;
+function P(t){return pw(ip(W.g,t),ip(W.T,t))}
+gv=[ip(W.g,now),ip(W.g,now+18e5),ip(W.g,now+36e5)];mx=Math.max.apply(null,gv);mn=Math.min.apply(null,gv);vh=(mx-mn)/(mx+50);
+spd=W.sp==null?0.3:W.sp;conf=1-Math.min(0.75,0.8*spd+0.5*vh);
+if(age>30)conf-=Math.min(0.3,(age-30)/300);if(ab>4)conf-=Math.min(0.25,(ab-4)/40);conf=Math.max(0.05,conf);
+mg=0.1+(1-conf)*0.5+[0,0.15,0.4][sky];
+function sim(Ld,H){var E=soc/100*usable,q;for(q=1;q<=H*4;q++){E+=(P(now+q*9e5)*(1-mg)-Ld)*0.25;if(E>usable)E=usable;if(E<rWh)return (q-1)/4}return H}
+lv=(C.hv<=C.inv&&sim(C.hv,1)>=1)?2:((C.nl<=C.inv&&sim(C.nl,1)>=1)?1:0);
+if(conf<0.5)lv=Math.min(lv,1);if(sky==2||age>30||ab>8)lv=Math.min(lv,1);if(age>90)lv=0;
+L=[C.sv,C.nl,C.hv][lv];un=lv?sim(L,3):0;
+p0=P(now);p30=P(now+18e5);p60=P(now+36e5);for(i=0;i<=4;i++)av+=P(now+i*9e5)/5;
+sc=Math.round(100*Math.min(1,(av*(1-mg)+Math.max(0,soc/100*usable-rWh))/C.hv));
+var off=navigator.onLine===false?'OFFLINE. Saved forecast from ':'Forecast updated ';
+show(lv,lv?(un>=3?'Safe for the next 3 hours':'Safe until about '+hm(now+un*36e5)):'Check again in 15 minutes',
+age>90?'Forecast is too old to trust.':'Solar '+f(p0)+' now, '+f(p60)+' in 1 h. Battery '+bl[S.soc>70?2:S.soc>40?1:0]+'.',
+off+(age<1?'just now':Math.round(age)+' min ago')+'. Confidence '+Math.round(conf*100)+'%.');
+dk=Math.floor((now+W.o*1000)/864e5);for(i=0;i<W.ts.length;i++)if(Math.floor((W.ts[i]+W.o*1000)/864e5)==dk)kw+=P(W.ts[i]+18e5)/1000;
+var ccn=ip(W.cc,now),c0=cs(now),kt=c0>0?Math.round(100*gv[0]/c0)+'%':'night';
+function hr(Ld){var h=(soc/100*usable-rWh)/Ld;return h>0?h.toFixed(1)+' h':'0 h'}
+rows=[['Score (0-100)',sc],['Power now / +30 min / +1 h',f(p0)+' / '+f(p30)+' / '+f(p60)],['Expected today',kw.toFixed(1)+' kWh'],['Cloud cover',Math.round(ccn)+'%'],['Light vs clear sky',kt],['Stability',Math.round(100*(1-vh))+'%'],['Confidence',Math.round(conf*100)+'%'],
+['Battery lasts: heaviest use',hr(C.hv)],['Battery lasts: moderate use',hr(C.nl)],['Battery lasts: bare minimum',hr(C.sv)],['Energy to fill battery',Math.round((1-soc/100)*usable)+' Wh'],['Battery size usable',Math.round(usable)+' Wh']];
+$('tb').innerHTML=rows.map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>'}).join('');
+a=[];b=[];for(j=0;j<=14;j++){a.push(P(now+j*36e5));b.push(pw(cs(now+j*36e5),32))}
+ymax=Math.max.apply(null,a.concat(b))+1;
+function pl(v,c){return '<polyline fill="none" stroke="'+c+'" stroke-width="2" points="'+v.map(function(y,x){return (x*300/14).toFixed(0)+','+(115-y/ymax*108).toFixed(0)}).join(' ')+'"/>'}
+$('ch').innerHTML=pl(b,'#667')+pl(a,'#3c3');
+document.querySelector('meta[name=theme-color]')||0}
+function setOn(id,at,val){var bs=$(id).getElementsByTagName('button'),i;for(i=0;i<bs.length;i++)bs[i].className=bs[i].getAttribute(at)===val?'on':''}
+function spr(cb){xg('https://api.open-meteo.com/v1/forecast?latitude='+C.lat+'&longitude='+C.lon+'&hourly=shortwave_radiation&models=icon_seamless,gfs_seamless,ecmwf_ifs025&timezone=auto&forecast_days=2',function(j){var h=j.hourly,o=j.utc_offset_seconds||0,ks=[],k,i,n=Date.now(),s=0,c=0,t,mx,mn,sm,x;for(k in h)if(k.indexOf('shortwave_radiation')==0)ks.push(h[k]);if(ks.length<2)return cb(null);
+for(i=0;i<h.time.length;i++){t=pt(h.time[i],o);if(t<n-36e5||t>n+108e5)continue;mx=-1;mn=1e9;sm=0;for(k=0;k<ks.length;k++){x=ks[k][i];if(x==null)continue;mx=Math.max(mx,x);mn=Math.min(mn,x);sm+=x}if(mx<0)continue;s+=(mx-mn)/(sm/ks.length+50);c++}cb(c?Math.min(1,s/c):null)},function(){cb(null)})}
+function fetchW(){var k=key();xg('https://api.open-meteo.com/v1/forecast?latitude='+C.lat+'&longitude='+C.lon+'&hourly=global_tilted_irradiance,temperature_2m,cloud_cover&tilt='+C.tilt+'&azimuth='+(C.az-180)+'&timezone=auto&forecast_days=2',function(j){
+var h=j.hourly,o=j.utc_offset_seconds||0,ts=[],i;for(i=0;i<h.time.length;i++)ts.push(pt(h.time[i],o)-18e5);
+W={t:Date.now(),k:k,o:o,ts:ts,g:h.global_tilted_irradiance,T:h.temperature_2m,cc:h.cloud_cover,sp:(W&&W.k===k)?W.sp:null};put('w',W);calc();
+spr(function(s){if(s!=null&&W&&W.k===k){W.sp=s;put('w',W);calc()}})},function(){calc()})}
+function build(){var h='',i,d,j,G={sv:'Your loads',inv:'Inverter',v:'Battery',kwp:'Solar panels',lat:'Location'};for(i=0;i<FD.length;i++){d=FD[i];if(G[d[0]])h+='<h3 style="margin:18px 0 0">'+G[d[0]]+'</h3>';h+='<label>'+d[1]+'<span class="ro" id="o_'+d[0]+'"></span></label>';if(d[2]){h+='<select id="f_'+d[0]+'">';for(j=0;j<d[2].length;j++)h+='<option value="'+d[2][j][1]+'">'+d[2][j][0]+'</option>';h+='</select>'}else if(d[3])h+='<input id="f_'+d[0]+'" type="range" min="'+d[3][0]+'" max="'+d[3][1]+'" step="'+d[3][2]+'">';else h+='<input id="f_'+d[0]+'" type="number" step="any" inputmode="decimal">'}$('fm').innerHTML=h}
+function wf(){var k,e,o;for(k in D){e=$('f_'+k);e.value=C[k];o=$('o_'+k);if(o&&e.type=='range')o.textContent=C[k]+' W'}$('mp').href='geo:'+C.lat+','+C.lon+'?q='+C.lat+','+C.lon;$('mo').href='https://www.openstreetmap.org/?mlat='+C.lat+'&mlon='+C.lon+'#map=12/'+C.lat+'/'+C.lon}
+function rf(){var k,v;for(k in D){v=$('f_'+k).value;if(typeof D[k]=='number'){v=parseFloat(v);if(isNaN(v)||v<0&&k!='lat'&&k!='lon')continue}C[k]=v}
+C.lat=Math.max(-90,Math.min(90,C.lat));C.lon=Math.max(-180,Math.min(180,C.lon));C.res=Math.min(90,C.res);C.ef=Math.max(30,Math.min(100,C.ef));
+if(C.nl<C.sv)C.nl=C.sv;if(C.hv<C.nl)C.hv=C.nl;
+msg(C.hv>C.inv?'Heaviest use is above the inverter capacity ('+C.inv+' W), so it cannot be supplied.':'');put('c',C);wf()}
+function ch(e){var id=e&&e.target?e.target.id:'';rf();if(/^f_(sv|nl|hv|inv|v|ah|chem|res|kwp|ef)$/.test(id)){calc();return}W=null;calc();fetchW()}
+function pl2(s){var m=/@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(s)||/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(s)||/[?&](?:q|ll|query|destination)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)/.exec(s)||/(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)/.exec(s);return m?[+m[1],+m[2]]:null}
+function imp(){var m=/c=([^&]+)/.exec(location.hash),o,k;if(!m)return;try{o=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));for(k in D)if(o[k]!==undefined&&typeof o[k]===typeof D[k])C[k]=o[k];put('c',C);history.replaceState(null,'',location.pathname+location.search)}catch(e){}}
+C=cp(D);var sc=get('c'),k0;if(sc)for(k0 in D)if(sc[k0]!==undefined&&typeof sc[k0]===typeof D[k0])C[k0]=sc[k0];
+S=get('s')||{soc:55,t:0};K=get('k')||{k:0,t:0};W=get('w');imp();build();wf();if(!sc)$('stg').open=true;
+$('fm').onchange=ch;$('fm').oninput=function(e){if(e.target.type=='range'){rf();calc()}};
+$('gl').oninput=function(){var p=pl2(this.value);if(p){C.lat=p[0];C.lon=p[1];wf();put('c',C);msg('Location set from link.');W=null;calc();fetchW()}else if(/goo\.gl|maps\.app/.test(this.value))msg('Short links cannot be read. Paste the full link or coordinates.')};
+$('bt').onclick=function(e){var s=e.target.getAttribute('data-s');if(s){S={soc:+s,t:Date.now()};put('s',S);calc()}};
+$('sk').onclick=function(e){var s=e.target.getAttribute('data-k');if(s!==null){K={k:+s,t:Date.now()};put('k',K);calc()}};
+$('gps').onclick=function(){if(!navigator.geolocation)return msg('GPS not available.');msg('Finding location...');navigator.geolocation.getCurrentPosition(function(p){C.lat=+p.coords.latitude.toFixed(4);C.lon=+p.coords.longitude.toFixed(4);wf();put('c',C);msg('Location set.');W=null;calc();fetchW()},function(){msg('Could not get GPS. Enter coordinates instead.')},{timeout:20000})};
+$('shr').onclick=function(){var u=location.href.split('#')[0]+'#c='+btoa(JSON.stringify(C)).replace(/\+/g,'-').replace(/\//g,'_');
+if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(function(){msg('Link copied. Send it to another phone.')},function(){prompt('Copy this link',u)});else prompt('Copy this link',u)};
+$('rst').onclick=function(){if(confirm('Reset all settings?')){C=cp(D);put('c',C);wf();W=null;calc();fetchW()}};
+calc();fetchW();
+setInterval(calc,6e4);setInterval(function(){if(!W||Date.now()-W.t>3e5)fetchW()},6e4);
+window.addEventListener('online',fetchW);document.addEventListener('visibilitychange',function(){if(!document.hidden){calc();if(!W||Date.now()-W.t>3e5)fetchW()}});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js')['catch'](function(){});
+})();
+</script></body></html>
