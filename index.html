@@ -19,7 +19,7 @@ input[type=range]{padding:0;border:0;background:none}.ro{float:right;color:#fff;
 <details id="stg"><summary>Settings</summary><div id="fm"></div>
 <label>Paste a Google Maps link or "lat, lon"</label><input id="gl" placeholder="https://www.google.com/maps/@24.94,67.37,15z">
 <div class="row"><button id="gps">Use GPS</button><button id="shr">Copy share link</button><button id="rst">Reset</button></div>
-<p id="m"></p><p><a id="mp">Open in maps app</a> &middot; <a id="mo" target="_blank">OpenStreetMap</a></p></details>
+<h3 style="margin:18px 0 0">Background alerts</h3><p id="tp"></p><div class="row"><button id="alc">Copy alert setup</button></div><p id="m"></p><p><a id="mp">Open in maps app</a> &middot; <a id="mo" target="_blank">OpenStreetMap</a></p></details>
 <p>Guidance only. Based on forecasts and your taps, not on meters. Weather data: Open-Meteo.</p>
 <script>
 (function(){
@@ -106,6 +106,9 @@ $('shr').onclick=function(){var u=location.href.split('#')[0]+'#c='+btoa(JSON.st
 if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(function(){msg('Link copied. Send it to another phone.')},function(){prompt('Copy this link',u)});else prompt('Copy this link',u)};
 $('rst').onclick=function(){if(confirm('Reset all settings?')){C=cp(D);put('c',C);wf();W=null;calc();fetchW()}};
 calc();fetchW();
+function tpc(){var t=get('tp'),c='abcdefghijklmnopqrstuvwxyz0123456789',i,r;if(!t){t='srp-';for(i=0;i<22;i++){r=window.crypto&&crypto.getRandomValues?crypto.getRandomValues(new Uint8Array(1))[0]:Math.floor(Math.random()*256);t+=c.charAt(r%36)}put('tp',t)}return t}
+$('tp').textContent='Your alert topic (keep private): '+tpc();
+$('alc').onclick=function(){var u=JSON.stringify({topic:tpc(),cfg:C});if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(function(){msg('Alert setup copied. Paste it into the GitHub secret.')},function(){prompt('Copy this',u)});else prompt('Copy this',u)};
 setInterval(calc,6e4);setInterval(function(){if(!W||Date.now()-W.t>3e5)fetchW()},6e4);
 window.addEventListener('online',fetchW);document.addEventListener('visibilitychange',function(){if(!document.hidden){calc();if(!W||Date.now()-W.t>3e5)fetchW()}});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js')['catch'](function(){});
